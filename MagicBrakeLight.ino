@@ -1,10 +1,14 @@
-/* ADXL335 Simple Test*/
-#include <SD.h>
-
-#define SD_CARD_CD_DIO 4 /* DIO pin used to control the modules CS pin */
+/*
+ * MagicBrakeLight
+ * enlavin@gmail.com
+ * 
+ * Uses an ADXL335 accelerometer to detect that the bike is stopping and lights up
+ * a brake light (8x8 LED module). It also sends the sensor data over the serial
+ * port to be used by other devices (i.e. via bluetooth).
+ */
 
 #define BAUDRATE 115200                //  Valid values: 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200. 
-#define SEP ","
+#define DATA_SEP ","
 
 #define BOARD_PROMINI 0
 #define BOARD_LEONARDO 1
@@ -17,14 +21,24 @@
 #endif
 
 #define SETUP_DELAY 1000
+#define SENSOR_DELAY 50
+
+#define WINDOW_SIZE 3
+
+/* setup this axes to match the orientation of your sensor */
+#define FORWARD_AXIS 0
+#define SIDE_AXIS 1
+#define VERTICAL_AXIS 2
+
+#define INITIAL_BRAKE_THRESHOLD -60
 
 
-int i;
-unsigned int x,y,z;
-unsigned int freno;
+int x, y, z;
+unsigned int brake_light;
+int brake_threshold;
+int window[WINDOW_SIZE];
 
-void setup() { 
-  /*pinMode(0, INPUT_PULLUP);*/
+void setupSerial() {
   //Initialize serial and wait for port to open:
   _SERIAL.begin(BAUDRATE); 
   while (!_SERIAL) {
@@ -33,8 +47,10 @@ void setup() {
   //  Change mybt to your device name, and 1234 to your pin
   _SERIAL.write("AT+NAMEFrenoBici");
   delay(SETUP_DELAY);
-  /*_SERIAL.write("AT+PIN1234");*/
-  /*delay(SETUP_DELAY);*/
+  /* uncomment this if you want to provide a PIN
+  _SERIAL.write("AT+PIN1234");
+  delay(SETUP_DELAY); */
+
   switch(BAUDRATE)  {
      case 1200:    _SERIAL.write("AT+BAUD1");  break; 
      case 2400:    _SERIAL.write("AT+BAUD2");  break; 
@@ -47,55 +63,67 @@ void setup() {
      default:      _SERIAL.write("AT+BAUD4");  break; 
   }
   delay(SETUP_DELAY);
+}
 
-  analogReference(EXTERNAL);
-  i = 0;
-  freno = LOW;
-
-  // see if the card is present and can be initialized:
-  if (!SD.begin(SD_CARD_CD_DIO)) {
-    Serial.println("Card failed, or not present");
-    // don't do anything more:
-    return;
+void initWindow()
+{
+  /* Prefill the window. Most recent entries are on the lower addresses */
+  for (int i=0; i<WINDOW_SIZE; i++)
+  {
+    window[WINDOW_SIZE - i - 1] = analogRead(FORWARD_AXIS);
+    delay(SENSOR_DELAY);
   }
-  Serial.println("card initialized.");
+}
+
+void setup() { 
+  // ADXL335 uses 3.3V
+  analogReference(EXTERNAL);
+
+  setupSerial();
+  initWindow();
+
+  brake_light = LOW;
+
+  brake_threshold = INITIAL_BRAKE_THRESHOLD;
+}
+
+int mean(int *window, int window_size)
+{
+  int sum = 0;
+  for (int i = 0; i < window_size; i++)
+  {
+    sum += window[i];
+  }
+
+  return sum / window_size;
+}
+
+void scrollWindow(int *window, int window_size)
+{
+  memcpy(window + 1, window, window_size - 1);
 }
 
 void loop() {
-  x = analogRead(0); 
-  y = analogRead(1); 
-  z = analogRead(2); 
+  x = analogRead(FORWARD_AXIS); 
+  y = analogRead(SIDE_AXIS); 
+  z = analogRead(VERTICAL_AXIS); 
 
-  freno = (x > 600) ? freno = HIGH : freno = LOW;
+  brake_light = x - mean(window, WINDOW_SIZE) < brake_threshold;
 
-  digitalWrite(13, freno);
+  digitalWrite(13, brake_light);
 
   String accel = "";
+  accel += String(brake_light);
+  accel += DATA_SEP;
   accel += String(x);
-  accel += SEP;
+  accel += DATA_SEP;
   accel += String(y);
-  accel += SEP;
+  accel += DATA_SEP;
   accel += String(z);
-  accel += SEP;
+  accel += DATA_SEP;
   accel += String(millis());
   _SERIAL.println(accel);
+  delay(50);
 
-  File dataFile = SD.open("bici.tsv", FILE_WRITE);
-  if (dataFile) {
-    dataFile.println(accel);
-    dataFile.close();
-  }  
-  // if the file isn't open, pop up an error:
-  else {
-    Serial.println("error opening file");
-  }   
-  /*if (freno == LOW)*/
-    delay(50);
-  /*else*/
-  /*{*/
-    /*_SERIAL.println("Freno!");*/
-    /*delay(2000);*/
-  /*}*/
-
-  i++;
+  scrollWindow(window, WINDOW_SIZE);
 }
