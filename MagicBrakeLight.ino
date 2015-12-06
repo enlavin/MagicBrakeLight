@@ -22,6 +22,10 @@
 
 #define SETUP_DELAY 1000
 #define SENSOR_DELAY 50
+#define LIGHT_BLINK_DELAY 250
+#define BRAKE_ACTIVE_DELAY 2000
+
+#define BRAKE_LIGHT_PIN 13
 
 #define WINDOW_SIZE 3
 
@@ -34,9 +38,15 @@
 
 
 int x, y, z;
-unsigned int brake_light;
+bool brake_triggered;
+bool brake_active;
+int brake_light;
 int brake_threshold;
 int window[WINDOW_SIZE];
+
+long int light_blink_timer;
+long int last_sample_timer;
+long int brake_triggered_timer;
 
 void setupSerial() {
   //Initialize serial and wait for port to open:
@@ -82,7 +92,12 @@ void setup() {
   setupSerial();
   initWindow();
 
-  brake_light = LOW;
+  last_sample_timer = millis();
+  light_blink_timer = millis();
+
+  brake_light = HIGH;
+  brake_triggered = false;
+  brake_active = false;
 
   brake_threshold = INITIAL_BRAKE_THRESHOLD;
 }
@@ -104,26 +119,50 @@ void scrollWindow(int *window, int window_size)
 }
 
 void loop() {
-  x = analogRead(FORWARD_AXIS); 
-  y = analogRead(SIDE_AXIS); 
-  z = analogRead(VERTICAL_AXIS); 
+  if (millis() - last_sample_timer > SENSOR_DELAY)
+  {
+    x = analogRead(FORWARD_AXIS); 
+    y = analogRead(SIDE_AXIS); 
+    z = analogRead(VERTICAL_AXIS); 
 
-  brake_light = x - mean(window, WINDOW_SIZE) < brake_threshold;
+    brake_triggered = x - mean(window, WINDOW_SIZE) < brake_threshold;
+    if (brake_triggered)
+    {
+      brake_active = true;
+      brake_triggered_timer = millis();
+    }
 
-  digitalWrite(13, brake_light);
+    String accel = "";
+    accel += String(brake_active);
+    accel += DATA_SEP;
+    accel += String(x);
+    accel += DATA_SEP;
+    accel += String(y);
+    accel += DATA_SEP;
+    accel += String(z);
+    accel += DATA_SEP;
+    accel += String(millis());
+    _SERIAL.println(accel);
+    scrollWindow(window, WINDOW_SIZE);
 
-  String accel = "";
-  accel += String(brake_light);
-  accel += DATA_SEP;
-  accel += String(x);
-  accel += DATA_SEP;
-  accel += String(y);
-  accel += DATA_SEP;
-  accel += String(z);
-  accel += DATA_SEP;
-  accel += String(millis());
-  _SERIAL.println(accel);
-  delay(50);
-
-  scrollWindow(window, WINDOW_SIZE);
+    last_sample_timer = millis();
+  }
+  
+  if (brake_active)
+  {
+    digitalWrite(BRAKE_LIGHT_PIN, HIGH);
+    if (millis() - brake_triggered_timer > BRAKE_ACTIVE_DELAY)
+    {
+      brake_active = false;
+    }
+  }
+  else 
+  {
+    if (millis() - light_blink_timer > LIGHT_BLINK_DELAY)
+    {
+      brake_light = !brake_light;
+      light_blink_timer = millis();
+    }
+    digitalWrite(BRAKE_LIGHT_PIN, brake_light);
+  }
 }
