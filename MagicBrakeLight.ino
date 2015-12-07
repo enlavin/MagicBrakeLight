@@ -35,7 +35,7 @@
 #define VERTICAL_AXIS 2
 
 #define INITIAL_BRAKE_THRESHOLD -60
-
+#define BRAKE_TRIGGERED_THRESHOLD 2
 
 int x, y, z;
 bool brake_triggered;
@@ -43,6 +43,7 @@ bool brake_active;
 int brake_light;
 int brake_threshold;
 int window[WINDOW_SIZE];
+int brake_triggered_times;
 
 long int light_blink_timer;
 long int last_sample_timer;
@@ -98,6 +99,7 @@ void setup() {
   brake_light = HIGH;
   brake_triggered = false;
   brake_active = false;
+  brake_triggered_times = 0;
 
   brake_threshold = INITIAL_BRAKE_THRESHOLD;
 }
@@ -128,8 +130,17 @@ void loop() {
     brake_triggered = x - mean(window, WINDOW_SIZE) < brake_threshold;
     if (brake_triggered)
     {
-      brake_active = true;
-      brake_triggered_timer = millis();
+      brake_triggered_times += 1;
+      if (brake_triggered_times > BRAKE_TRIGGERED_THRESHOLD)
+      {
+        brake_active = true;
+        brake_triggered_timer = millis();
+        brake_triggered_times -= 1;
+      }
+    }
+    else
+    {
+      brake_triggered_times = 0;
     }
 
     String accel = "";
