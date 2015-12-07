@@ -6,6 +6,7 @@
  * a brake light (8x8 LED module). It also sends the sensor data over the serial
  * port to be used by other devices (i.e. via bluetooth).
  */
+#include "LedControl.h"
 
 #define BAUDRATE 115200                //  Valid values: 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200. 
 #define DATA_SEP ","
@@ -35,7 +36,7 @@
 #define VERTICAL_AXIS 2
 
 #define INITIAL_BRAKE_THRESHOLD -60
-#define BRAKE_TRIGGERED_THRESHOLD 2
+#define BRAKE_TRIGGERED_THRESHOLD 1
 
 int x, y, z;
 bool brake_triggered;
@@ -48,6 +49,9 @@ int brake_triggered_times;
 long int light_blink_timer;
 long int last_sample_timer;
 long int brake_triggered_timer;
+
+LedControl lc=LedControl(12,11,10,1);
+
 
 void setupSerial() {
   //Initialize serial and wait for port to open:
@@ -91,6 +95,16 @@ void setup() {
   analogReference(EXTERNAL);
 
   setupSerial();
+
+  /*
+   The MAX72XX is in power-saving mode on startup,
+   we have to do a wakeup call
+   */
+  lc.shutdown(0,false);
+  lc.setIntensity(0,15);
+  /* and clear the display */
+  lc.clearDisplay(0);
+
   initWindow();
 
   last_sample_timer = millis();
@@ -120,6 +134,27 @@ void scrollWindow(int *window, int window_size)
   memcpy(window + 1, window, window_size - 1);
 }
 
+void led_all_on() {
+  for(int row=0;row<8;row++) {
+    lc.setRow(0, row, 0xff);
+  }
+}
+
+void led_all_off() {
+  for(int row=0;row<8;row++) {
+    lc.setRow(0, row, 0x00);
+  }
+}
+
+void set_led(bool status)
+{
+  digitalWrite(BRAKE_LIGHT_PIN, status);
+  if (status)
+    led_all_on();
+  else
+    led_all_off();
+}
+
 void loop() {
   if (millis() - last_sample_timer > SENSOR_DELAY)
   {
@@ -135,7 +170,7 @@ void loop() {
       {
         brake_active = true;
         brake_triggered_timer = millis();
-        brake_triggered_times -= 1;
+        brake_triggered_times -= 0;
       }
     }
     else
@@ -161,7 +196,7 @@ void loop() {
   
   if (brake_active)
   {
-    digitalWrite(BRAKE_LIGHT_PIN, HIGH);
+    set_led(HIGH);
     if (millis() - brake_triggered_timer > BRAKE_ACTIVE_DELAY)
     {
       brake_active = false;
@@ -174,6 +209,6 @@ void loop() {
       brake_light = !brake_light;
       light_blink_timer = millis();
     }
-    digitalWrite(BRAKE_LIGHT_PIN, brake_light);
+    set_led(brake_light);
   }
 }
